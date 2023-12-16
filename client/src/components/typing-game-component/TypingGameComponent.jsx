@@ -1,7 +1,14 @@
-import React, {useState } from "react";
+/**
+ * useEffect : (i) lets you synchronize a component with an external system
+ *             (ii) we will be using it to check game completion conditions
+ */
+import React, {useState, useEffect} from "react";
 import useTypingGame, {PhaseType} from "react-typing-game-hook"; // for playing the game
 // Make sure to run `npm install react-typing-game-hook` to install the typing game hook
+import CardComponent from "../game-history-component/CardComponent";
 import styles from "./TypingGameComponent.module.css";
+import axios from "axios";
+import { userAgent } from "next/server";
 
 //Currently using a hard coded sentence bank
 const sentenceData = [
@@ -24,8 +31,12 @@ const sentenceData = [
 
 const TypingGameComponent = () => {
   //TODO Create a useState called gameStarted with the function setGameStarted and intialize it to false
+    const [gameStarted, setGameStarted] = useState(false);
+  
   //TODO Create a useState called selectedSentence with the funciton setSelectedSentence and initialize it to the first sentence in sentenceData
 
+  const [selectedSentence, setSelectedSentence] = useState(sentenceData[0]);
+  const [statsObject, setStatsObject] = useState(null);
 
   // useTypingGame to keep track of, and modify chars being typed and other stuff
   const {
@@ -45,36 +56,110 @@ const TypingGameComponent = () => {
       console.log(phase);
       resetTyping();
       //TODO Set the gameStarted state to true
+      setGameStarted(true);
     }
   };
 
-  // here, we render the game
-  return (
-    <div className={styles.typing_game}>
-      { !gameStarted ?  (
-        <div className={styles.start_game}>
-          <div className={styles.sentence_dropdown}>
-            {/* TODO Create a h3 that says "Select a Sentence" */}
-            
-            
-            {/* TODO Create a select HTML tag with the options as the sentenceData */}
-            {/* Iterate through the sentenceData array to dynamically and create an option for each sentence*/}
-            {/* Hint use .map */}
-            {/* Set the selectedSentence state to be selected sentence from the dropdown using the onChange attribute*/}
+  const calculateWPM = () => {
+    /** Num of words in sentence using split() to get array of words separated by a space and
+     * length of array
+     */
+    let numWords = selectedSentence.split(" ").length;
+    /** use getDuration() to get game duration in miliseconds
+     * and divide by 1000 and then 60 to turn into minutes
+     */
+    let time = getDuration() / 1000 / 60;
+    console.log("Number of words: " + numWords);
+    console.log("duration of mins: " + time);
+    return numWords / time;
+  }
 
+  //if game ended, send game stats to the DB
+  const handleGameEnd = () => {
+    let stats = {
+      sentence : chars,
+      //number of correct words
+      correctCharacters : correctChar,
+      incorrectCharacters : errorChar,
+      //toFixed() rounds to 2 decimal pts
+      wpm : calculateWPM().toFixed(2),
+      //miliseconds ---> mins
+      time : (getDuration() / 1000 /60).toFixed(2),
+    }
+    //change statsObject to include stats - found above
+    setStatsObject(stats);
+    //call sendGameStats(param)
+    sendGameStats(stats);
+  } 
+
+  //signal end of game
+  useEffect(() => {
+    if (phase === PhaseType.NotStarted && charsState.length === charsState.length +1) {
+      handleGameEnd();
+    }
+  }, [phase, charsState.length]);
+
+// here, we render the game
+return (
+  <div className={styles.typing_game}>
+    {!gameStarted ? (
+      <div className={styles.start_game}>
+        <div className={styles.sentence_dropdown}>
+          <h3 className={styles.sentence_label}>Select a sentence</h3>
+          <select
+            name="sentence-select"
+            id={styles.sentence_selector}
+            onChange={(e) => setSelectedSentence(e.target.value)}
+          >
+            {sentenceData.map((sentence, index) => (
+              <option key={index}>{sentence}</option>
+            ))}
+          </select>
         </div>
-          {/* TODO Create a button that calls handleGameStart when clicked */}
-        </div>
-      ) : (
-        <div className={styles.typing_component}>
-          {/* TODO Create a h2 to show the selectedSentence state */}
-        </div>
-      )}
-    </div>
-  );
+        <button className={styles.start_button} onClick={handleGameStart}>
+          Start
+        </button>
+      </div>
+    ) : (
+      <div className={styles.typing_component}>
+        <p>Click on the sentence below and start typing!</p>
+      <h2 
+        onKeyDown={(e) => {
+          // call different functions based on the key clicked
+          const key = e.key;
+          if (key === "Escape") {
+            // we can potentially change it from escape char to a button lmk tho
+            resetTyping();
+          } else if (key === "Backspace") {
+            deleteTyping(false);
+          } else if (key.length === 1) {
+            insertTyping(key);
+          }
+          // preventDefault makes sure that the keys dont do what they normally do, and instead
+          // execute the functions that we have specified above
+          e.preventDefault();
+        }}
+        tabIndex={0}
+        onBlur={handleGameEnd} // when the user clicks away from the component (which is in <h1> rn)
+      >
+        {chars.split("").map((char, index) => {
+          let state = charsState[index]; // check state at curr pos
+          // if not done -> black
+          // if correct -> green
+          // else red
+          let color = state === 0 ? "#292F36" : state === 1 ? "#417B5A" : "#FF6B6B";
+          return (
+            <span key={char + index} style={{ color }}>
+              {char}
+            </span>
+          );
+        })}
+      </h2>
+      </div>
+    )}
+    {statsObject && ( // Check if statsObject is not null before displaying it
+      <CardComponent {...statsObject}/>
+    )}
+  </div>
+);
 };
-
-// exporting the typing game component here
-export default TypingGameComponent;
-
-// wooooo
